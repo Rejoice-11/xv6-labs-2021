@@ -1,0 +1,22 @@
+Q1: Explain the output of vmprint in terms of Fig 3-4. What does page 0 contain?
+What is in page 2? When running in user mode, could the process read/write the
+memory mapped by page 1? What does the third to last page contain?
+
+A1:
+vmprint 输出的三级页表结构与教材图 3-4 一致。顶层目录第 0 项映射用户低地址空间，
+顶层目录第 255 项映射用户高地址空间。
+第 0 页存放进程的代码和初始数据，也就是 init 的 text/data 段。
+第 2 页在示例中是进程的第三个用户页，通常用于用户栈。
+第 1 页的 PTE 带有 PTE_R、PTE_W 和 PTE_U 权限位，因此用户态进程可以读写该页。
+倒数第三页对应底层第 509 项，是 USYSCALL 共享页，保存当前进程的 pid，并只读映射
+给用户空间，用户可以直接读取而无需进入内核。
+
+Q2: Which other xv6 system call(s) could be made faster using this shared page?
+Explain how.
+
+A2:
+uptime() 可以更快：内核把 ticks 计数值周期性地写入共享页，用户进程直接读取该页
+即可获得运行时间，不需要陷入内核。
+sbrk(0) 也可以更快：内核把当前进程的 sz 写入共享页，用户查询当前堆大小时就无需
+系统调用。
+更一般地说，凡是内核维护、用户频繁查询且只读的数据，都可以放在共享页中加速。
