@@ -1,0 +1,14 @@
+Q: Why are there missing keys with 2 threads, but not with 1 thread?
+Identify a sequence of events with 2 threads that can lead to a key being missing.
+
+A:
+两个线程可能同时对同一个 hash 桶执行 put()。例如：
+1. 线程 A 调用 put(k1)，发现 table[0] 为空，准备把 k1 插入。
+2. 线程 B 也调用 put(k2)，同样发现 table[0] 为空。
+3. A 先执行 insert(k1, &table[0])，把 table[0] 指向 k1。
+4. B 随后执行 insert(k2, &table[0])，把 table[0] 覆盖为 k2，导致 k1 从链表中丢失。
+
+即使两个线程看到相同的链表头，插入时对 *p 的覆盖也会丢失其中一个新节点。
+单线程时所有操作串行执行，不会出现这种丢失。
+
+解决方法是按 hash 桶加锁，让每个桶的插入和查询互斥，同时不同桶之间仍可并行。
