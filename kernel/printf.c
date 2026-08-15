@@ -114,6 +114,21 @@ printf(char *fmt, ...)
     release(&pr.lock);
 }
 
+// Print the saved return addresses on the current kernel stack.
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  uint64 bottom = PGROUNDDOWN(fp);
+  uint64 top = PGROUNDUP(fp);
+
+  printf("backtrace:\n");
+  while(fp >= bottom && fp < top){
+    printf("%p\n", *(uint64 *)(fp - 8));
+    fp = *(uint64 *)(fp - 16);
+  }
+}
+
 void
 panic(char *s)
 {
@@ -121,6 +136,7 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;

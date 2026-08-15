@@ -1,0 +1,36 @@
+Q1: Which registers contain arguments to functions? For example, which
+register holds 13 in main's call to printf?
+
+A1: RISC-V 使用 a0 到 a7 寄存器传递函数参数。main 调用 printf 时，
+a0 保存格式字符串地址，a1 保存 f(8)+1 的计算结果 12，a2 保存 13。
+
+Q2: Where is the call to function f in the assembly code for main? Where
+is the call to g?
+
+A2: main 的汇编代码中没有对 f 或 g 的 jal/jalr 调用。f(8)+1 被编译器
+直接内联计算成 12（li a1,12）；g 也被内联进 f，f 的汇编中只有
+addiw a0,a0,3，没有调用 g。
+
+Q3: At what address is the function printf located?
+
+A3: printf 位于地址 0x638。main 中通过 jalr 1544(ra) 跳转到 0x638。
+
+Q4: What value is in the register ra just after the jalr to printf in main?
+
+A4: ra 保存的是 jalr 下一条指令的地址，即 0x38。
+
+Q5: Run the following code. What is the output? If the RISC-V were instead
+big-endian what would you set i to in order to yield the same output? Would
+you need to change 57616 to a different value?
+
+A5: 输出为 He110 World。小端模式下 0x00646c72 在内存中按字节存放为
+72 6c 64 00，即字符串 "rld"，57616 等于 0xe110，打印为 e110。
+若为大端模式，需要把 i 设置为 0x726c6400，使内存中的字节顺序仍然为
+72 6c 64 00。57616 不需要改变，因为它是数值本身，与字节序无关。
+
+Q6: In the following code, what is going to be printed after 'y='? Why does
+this happen?
+
+A6: y= 后面打印的是寄存器 a2 中的旧值或未定义值。printf 只收到了一个
+参数 3，但格式串中有两个 %d，printf 仍会从 a2 寄存器读取第二个参数，
+而调用者没有为 a2 赋值，因此输出不可预测。
