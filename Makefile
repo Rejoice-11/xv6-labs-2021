@@ -208,6 +208,11 @@ UPROGS += \
 	$U/_lazytests
 endif
 
+ifeq ($(LAB),mmap)
+UPROGS += \
+	$U/_mmaptest
+endif
+
 ifeq ($(LAB),cow)
 UPROGS += \
 	$U/_cowtest

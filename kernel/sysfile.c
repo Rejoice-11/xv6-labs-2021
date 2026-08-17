@@ -16,6 +16,8 @@
 #include "file.h"
 #include "fcntl.h"
 
+extern pte_t *walk(pagetable_t, uint64, int);
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -482,5 +484,141 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr, length, offset;
+  int prot, flags, fd, i;
+  struct proc *p = myproc();
+  struct file *f;
+
+  if(argaddr(0, &addr) < 0 || argaddr(1, &length) < 0 ||
+     argint(2, &prot) < 0 || argint(3, &flags) < 0 ||
+     argint(4, &fd) < 0 || argaddr(5, &offset) < 0)
+    return -1;
+  if(addr != 0 || offset != 0)
+    return -1;
+  if(fd < 0 || fd >= NOFILE || (f = p->ofile[fd]) == 0)
+    return -1;
+  if((flags & MAP_SHARED) && (prot & PROT_WRITE) && !f->writable)
+    return -1;
+  for(i = 0; i < NVMA; i++)
+    if(!p->vmas[i].valid)
+      break;
+  if(i == NVMA)
+    return -1;
+
+  addr = PGROUNDUP(p->sz);
+  p->vmas[i].valid = 1;
+  p->vmas[i].addr = addr;
+  p->vmas[i].length = length;
+  p->vmas[i].prot = prot;
+  p->vmas[i].flags = flags;
+  p->vmas[i].offset = offset;
+  p->vmas[i].file = f;
+  filedup(f);
+  p->sz = addr + PGROUNDUP(length);
+  return addr;
+}
+
+int
+mmap_fault(struct proc *p, uint64 va, uint64 scause)
+{
+  int i, perm;
+  char *mem;
+  uint64 off, n;
+  struct inode *ip;
+
+  for(i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid && va >= p->vmas[i].addr &&
+       va < p->vmas[i].addr + p->vmas[i].length){
+      if(scause == 15 && !(p->vmas[i].prot & PROT_WRITE))
+        return -1;
+      if(scause == 13 && !(p->vmas[i].prot & PROT_READ))
+        return -1;
+
+      off = (PGROUNDDOWN(va) - p->vmas[i].addr) + p->vmas[i].offset;
+      mem = kalloc();
+      if(mem == 0)
+        return -1;
+      memset(mem, 0, PGSIZE);
+      ip = p->vmas[i].file->ip;
+      ilock(ip);
+      if(off < ip->size){
+        n = PGSIZE;
+        if(off + n > ip->size)
+          n = ip->size - off;
+        readi(ip, 0, (uint64)mem, off, n);
+      }
+      iunlock(ip);
+
+      perm = PTE_U;
+      if(p->vmas[i].prot & PROT_READ)
+        perm |= PTE_R;
+      if(p->vmas[i].prot & PROT_WRITE)
+        perm |= PTE_W;
+      if(p->vmas[i].prot & PROT_EXEC)
+        perm |= PTE_X;
+      if(mappages(p->pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)mem, perm) != 0){
+        kfree(mem);
+        return -1;
+      }
+      return 0;
+    }
+  }
+  return -1;
+}
+
+int
+munmap(struct proc *p, uint64 addr, uint64 length)
+{
+  int i;
+  uint64 a, off;
+  pte_t *pte;
+
+  for(i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid && addr >= p->vmas[i].addr &&
+       addr + length <= p->vmas[i].addr + p->vmas[i].length){
+      for(a = addr; a < addr + length; a += PGSIZE){
+        pte = walk(p->pagetable, a, 0);
+        if(pte == 0 || (*pte & PTE_V) == 0)
+          continue;
+        if(p->vmas[i].flags & MAP_SHARED){
+          off = (a - p->vmas[i].addr) + p->vmas[i].offset;
+          begin_op();
+          ilock(p->vmas[i].file->ip);
+          writei(p->vmas[i].file->ip, 0, PTE2PA(*pte), off, PGSIZE);
+          iunlock(p->vmas[i].file->ip);
+          end_op();
+        }
+        uvmunmap(p->pagetable, a, 1, 0);
+      }
+      if(addr == p->vmas[i].addr){
+        p->vmas[i].addr += length;
+        p->vmas[i].offset += length;
+      }
+      p->vmas[i].length -= length;
+      if(p->vmas[i].length == 0){
+        fileclose(p->vmas[i].file);
+        p->vmas[i].valid = 0;
+      }
+      return 0;
+    }
+  }
+  return -1;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr, length;
+
+  if(argaddr(0, &addr) < 0 || argaddr(1, &length) < 0)
+    return -1;
+  if(munmap(myproc(), addr, length) < 0)
+    return -1;
   return 0;
 }

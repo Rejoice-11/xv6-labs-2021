@@ -76,6 +76,10 @@ void            pipeclose(struct pipe*, int);
 int             piperead(struct pipe*, uint64, int);
 int             pipewrite(struct pipe*, uint64, int);
 
+// mmap
+int             mmap_fault(struct proc*, uint64, uint64);
+int             munmap(struct proc*, uint64, uint64);
+
 // printf.c
 void            printf(char*, ...);
 void            panic(char*) __attribute__((noreturn));

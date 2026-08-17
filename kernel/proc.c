@@ -119,6 +119,9 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+#ifdef LAB_MMAP
+  memset(p->vmas, 0, sizeof(p->vmas));
+#endif
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -299,6 +302,14 @@ fork(void)
   for(i = 0; i < NOFILE; i++)
     if(p->ofile[i])
       np->ofile[i] = filedup(p->ofile[i]);
+#ifdef LAB_MMAP
+  for(i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid){
+      np->vmas[i] = p->vmas[i];
+      filedup(p->vmas[i].file);
+    }
+  }
+#endif
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
@@ -340,9 +351,17 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
+  int i;
 
   if(p == initproc)
     panic("init exiting");
+
+#ifdef LAB_MMAP
+  for(i = 0; i < NVMA; i++){
+    if(p->vmas[i].valid)
+      munmap(p, p->vmas[i].addr, p->vmas[i].length);
+  }
+#endif
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
